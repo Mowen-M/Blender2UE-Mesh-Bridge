@@ -64,14 +64,35 @@ the cube, because it is the only BasicShape whose native bounds are exactly 100�
 1. In the panel, set **UE Export Directory** — anything writable; `//ue_parts/` means “next to
    the current .blend file”.
 2. Select the objects → **Export Parts to UE (FBX + Placement)**.
-3. In UE, run the generated script (Output Log console):
+3. In UE, the usual way — copy the script into the project:
 
-   ```
-   py "C:/path/to/export/ue_side/ue_import_parts.py"
-   ```
+   1. copy `ue_side/ue_import_parts.py` **and** `ue_side/b2ue_export_dir.txt` into
+      `<UE project>\Content\Python\` (create that folder if it is missing — the txt holds
+      this export folder’s path so the script can find `placement.json`),
+   2. restart the UE editor (files under `Content\Python` are picked up at startup),
+   3. run:
+      ```
+      py "ue_import_parts.py"
+      ```
+      (Tools → Execute Script…, or the Output Log console).
 
-   The export folder can live anywhere — the script locates `placement.json` and `parts/` from
-   its own location, so there are no machine-specific paths in it.
+   If you re-export into a different folder later, copy `b2ue_export_dir.txt` again.
+
+   The script finds the export folder by itself: an explicit `EXPORT_DIR` at the top, the
+   `B2UE_EXPORT_DIR` environment variable, the one-line `b2ue_export_dir.txt` next to the
+   script, the path remembered in `<UE project>\Saved\B2UE\last_export_dir.txt` after the
+   first run, or a bounded scan of the UE project for the newest `placement.json` +
+   `parts/`. Running it in place also works:
+   `py "<export folder>/ue_side/ue_import_parts.py"`.
+
+### Importing is slow — expect it
+
+A full scene easily takes **5–30 minutes**, and one heavy mesh can sit there for minutes
+without printing anything. UE imports FBX single-threaded; this is normal. Every batch prints
+a line with the **elapsed seconds**, and the whole list is written to
+`<export folder>/ue_import_log.txt`, so you can always check that it is still moving. Don’t
+close the editor and don’t run the script twice — a second run re-imports the same meshes on
+top of the first one.
 
 What the export folder contains:
 
@@ -121,6 +142,13 @@ placement.json  =  quaternion written as (x, -y, z, w)
 - **Everything is grey / one flat colour** → turn on *Import Materials* for the FBX import.
   A flat `M_Stone` means the mesh arrived with no material slot; check the `materials:` line in
   `ue_import_log.txt`.
+- **“Cannot locate the Blender export folder”** → the script needs the folder holding
+  `placement.json` + `parts/`. It remembers it in `<UE project>\Saved\B2UE\last_export_dir.txt`
+  after the first run. For a fresh export that sits outside the UE project, do one of these
+  once: copy `b2ue_export_dir.txt` next to the script, set `EXPORT_DIR` at the top of the
+  script, or set the environment variable `B2UE_EXPORT_DIR`.
+- **The import looks frozen** → it is just slow. Watch the elapsed-seconds column, or open
+  `ue_import_log.txt`; never start a second run while the first is still going.
 - **Blender refuses the ZIP** → the folder inside must be a valid Python module name; this
   package uses `blender2ue_mesh_bridge`.
 

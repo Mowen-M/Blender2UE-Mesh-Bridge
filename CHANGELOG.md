@@ -20,6 +20,14 @@ machine-specific paths anywhere, and the fallback-colour keyword list is English
   part at the exact transform, adds Sun / SkyLight / SkyAtmosphere and saves the level.
 - **Materials** — materials carried by the FBX are kept; only meshes with no material get a
   generated flat colour from the built-in palette.
+- **UE-side workflow** — `ue_import_parts.py` can be copied into `<UE project>\Content\Python`
+  and run with `py "ue_import_parts.py"` after an editor restart (the documented default). It
+  locates the export folder through `EXPORT_DIR`, `B2UE_EXPORT_DIR`, a `b2ue_export_dir.txt`
+  pointer written by the exporter, a remembered path in `Saved/B2UE/last_export_dir.txt`, or a
+  bounded scan of the UE project — no recursive scan of the home folder.
+- **Slow imports made visible** — every progress line carries elapsed seconds and the run
+  starts with an explicit note that a full scene takes 5–30 minutes, so a long import is
+  visibly alive; the full log is `ue_import_log.txt` in the export folder.
 - **Export path** — the folder picked in the panel is authoritative, `//` resolves against the
   `.blend`, and the UE-side script finds everything from its own location.
 

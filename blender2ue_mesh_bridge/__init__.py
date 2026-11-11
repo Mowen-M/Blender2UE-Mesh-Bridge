@@ -444,39 +444,56 @@ def _mesh_bbox_center(me):
 UE_README = r"""Blender2UE Mesh Bridge: Blender export  ->  UE auto-import
 ==========================================================
 
-In Blender (this add-on):
-  1) Select the objects you want to export (a whole city, a group of buildings,
-     display parts - anything).
-  2) N panel  >  B2UE Bridge  >  "Export Parts to UE (FBX + Placement)"
-       -> one FBX per unique mesh: origin set to the geometry centre, geometry baked at
-          the world origin, materials packed into the FBX
-       -> placement.json: name / mesh / world location / rotation / scale of every
-          object (units: metres)
-       -> ue_side\ is filled with the UE-side scripts automatically
+WHAT IS IN THIS FOLDER
+  parts\*.fbx       one FBX per unique mesh, origin at the geometry centre,
+                    materials packed in
+  placement.json     every object: name / mesh / world location / rotation / scale
+                    (metres)
+  ue_side\          ue_import_parts.py + helper scripts (add_lights.py,
+                    focus_cam.py, init_unreal.py)
+  b2ue_export_dir.txt  one line: the absolute path of this very folder (used by the
+                    UE script to find the export when the script is copied elsewhere)
 
-In Unreal Engine (choose one):
-  A. Run it yourself:  Tools > Execute Script...  (or the Python console:
-     py "C:/<export dir>/ue_side/ue_import_parts.py" )
-     The script finds placement.json and parts\ next to itself, imports every FBX into
-     /Game/MeshParts, creates /Game/Maps/Auto_placed_Map, spawns one actor per object at
-     the exact transform, adds Sun + SkyLight + SkyAtmosphere and saves the level.
-  B. On project start: copy ue_side\init_unreal.py to
-     <UE project>\Content\Python\init_unreal.py. The shipped file does nothing on
-     purpose - it is a placeholder so a project does not re-import by itself.
+HOW TO RUN IT IN UE (two ways)
 
-Key points:
-  - FBX import must have "Import Materials" turned on. Materials are collected into
-    /Game/MeshParts/Materials/<part name>
-  - While importing, UE lets the material take the plain name and renames the mesh to
-    <name>1 (or the other way round). The script renames things back once the import is
-    done, so do not rename assets by hand in between.
-  - Coordinate conversion: UE = (x*100, -y*100, z*100) centimetres,
-    quaternion = (x, -y, z, w)
-  - Destination folders, the level name and whether the old City_/DisplayPart_ actors are
-    cleared are constants at the top of ue_side\ue_import_parts.py
-    (CONTENT / MATDIR / LEVEL / USE_ISM / CLEAR_OLD)
-  - Every run writes a log: <export dir>\ue_import_log.txt
+  A) Copy the script into the project, like most people do:
+     1. Copy  ue_side\ue_import_parts.py  into  <UE project>\Content\Python\
+        (if Content\Python does not exist, create it)
+     2. Restart the UE editor (Python files under Content\Python are picked up at
+        startup).
+     3. Run:   py "ue_import_parts.py"
+       Place: Tools > Execute Script... , or the Output Log console, or the
+        "Execute Python Script" button of the Output Log.
+     The script finds this export folder on its own (it remembers the folder in
+     <UE project>\Saved\B2UE\last_export_dir.txt after the first run).  If it
+     cannot, copy  b2ue_export_dir.txt  next to the script, or set EXPORT_DIR at
+     the top of the script to this folder.
+
+  B) Run it straight out of this folder (no copying):
+     py "<this folder>\ue_side\ue_import_parts.py"
+
+WHAT IT DOES
+  - imports every FBX into /Game/MeshParts in size batches (<= 10 MB six at a time,
+    <= 50 MB two at a time, heavier meshes one at a time, each with a retry),
+    saving the content folder after every batch;
+  - resolves the mesh/material same-name clash UE creates on import and moves the
+    materials into /Game/MeshParts/Materials/<part>;
+  - keeps the materials the FBX brought in; only meshes that arrive with no
+    material get a generated flat colour;
+  - opens or creates /Game/Maps/Auto_placed_Map, optionally clears the previous
+    City_/DisplayPart_ actors, spawns one actor per object at its exact transform,
+    adds Sun + SkyLight + SkyAtmosphere, and saves the level;
+  - writes a log next to placement.json: ue_import_log.txt
+
+IMPORTING IS SLOW - EXPECT IT
+  A full scene easily takes 5-30 minutes, and a single heavy mesh can sit there for
+  minutes without printing anything.  Every batch prints a line with the elapsed
+  seconds, so: leave the editor alone, do not run the script a second time, and
+  watch ue_import_log.txt if the console scrolled away.  A second run would import
+  the same meshes again on top of the first one.
 """
+
+
 
 
 class OBJECT_OT_coordiknight_export_parts(bpy.types.Operator):
@@ -569,8 +586,27 @@ class OBJECT_OT_coordiknight_export_parts(bpy.types.Operator):
                 src = os.path.join(src_dir, fn)
                 if os.path.isfile(src):
                     shutil.copy2(src, os.path.join(side_dir, fn))
+        # Tell the UE-side script where this export lives, so it still works when the
+        # user copies ue_import_parts.py into <UEProject>\\Content\\Python and runs
+        #   py "ue_import_parts.py"
+        for sub in (outdir, side_dir):
+            try:
+                with open(os.path.join(sub, "b2ue_export_dir.txt"), "w",
+                          encoding="utf-8") as f:
+                    f.write(outdir + "\n")
+            except Exception:
+                pass
         with open(os.path.join(outdir, "README.txt"), "w", encoding="utf-8") as f:
-            f.write('py "ue_import_parts.py"\n')
+            f.write(
+                "Copy ue_side/ue_import_parts.py AND ue_side/b2ue_export_dir.txt into\n"
+                "<UEProject>\\Content\\Python (the txt tells the script where this export is),\n"
+                "restart the editor, then run:   py \"ue_import_parts.py\"\n"
+                "or run it in place:             py \"<this folder>/ue_side/ue_import_parts.py\"\n"
+                "\n"
+                "Importing is slow (a full scene can take 5-30 min).\n"
+                "Progress is printed per batch with elapsed seconds; full log:\n"
+                "  " + os.path.join(outdir, "ue_import_log.txt") + "\n"
+            )
         with open(os.path.join(outdir, "README_UE.txt"), "w", encoding="utf-8") as f:
             f.write(UE_README)
 

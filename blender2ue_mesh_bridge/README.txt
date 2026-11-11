@@ -90,12 +90,31 @@ WORKFLOW B - EXPORT PARTS, AUTO-PLACE IN UE
        ue_side/             ue_import_parts.py, init_unreal.py, add_lights.py,
                             focus_cam.py
        README_UE.txt        short instructions for the UE side
-       README.txt           one line:  py "ue_import_parts.py"
-3. UE side: Editor > Tools-Execute Script (UE 5.5+: Tools > Execute Script...) or the
-   Output Log console:
-       py "C:/path/to/<export folder>/ue_side/ue_import_parts.py"
-   The script finds placement.json and parts/ from its own location - it does not contain
-   machine-specific paths, so the export folder can live anywhere, on any machine.
+       README.txt           the commands below, for copy-paste
+       b2ue_export_dir.txt  one line: this export folder's absolute path
+3. UE side - the usual way (script copied into the project):
+     1) copy  ue_side/ue_import_parts.py  AND  ue_side/b2ue_export_dir.txt  into
+        <UE project>\Content\Python\  (create that folder if it is missing; the txt holds
+        this export folder's path so the script can find placement.json)
+     2) restart the UE editor (Python files under Content\Python load at startup)
+     3) run:   py "ue_import_parts.py"
+        (Tools > Execute Script..., or the Output Log console)
+   If you re-export into a DIFFERENT folder later, copy b2ue_export_dir.txt again.
+   The script finds this export folder by itself:
+        - from b2ue_export_dir.txt next to the script (copy it with the script),
+        - or from <UE project>\Saved\B2UE\last_export_dir.txt (written automatically
+          after the first successful run),
+        - or by scanning the UE project folder for the newest placement.json + parts/.
+   You can also skip the copying and run it straight out of the export folder:
+        py "C:/path/to/<export folder>/ue_side/ue_import_parts.py"
+
+IMPORTING IS SLOW - EXPECT IT
+-----------------------------
+A full city / display set easily takes 5-30 minutes, and one heavy mesh can sit there for
+minutes without printing anything.  Do not close the editor and do not run the script a
+second time (a second run re-imports the same meshes on top of the first one).  Every
+batch prints a line with the elapsed seconds, and the whole list is written to
+<export folder>/ue_import_log.txt, so you can check at any moment that it is still going.
 
 What ue_import_parts.py does, in order:
    - imports every FBX into /Game/MeshParts in size batches (<= 10 MB six at a time,
@@ -143,6 +162,19 @@ COORDINATE MAPPING
 
 TROUBLESHOOTING
 ---------------
+"Cannot locate the Blender export folder"
+   The script needs the folder holding placement.json + parts/.  It remembers that folder
+   after the first run (<UE project>\Saved\B2UE\last_export_dir.txt).  When a fresh export
+   sits outside the UE project, do one of these once:
+     - copy b2ue_export_dir.txt from the export folder next to ue_import_parts.py, or
+     - set EXPORT_DIR at the top of ue_import_parts.py to the export folder, or
+     - set the environment variable B2UE_EXPORT_DIR.
+
+"The import looks frozen"
+   It is not - UE imports FBX single-threaded and a heavy mesh can take minutes.  Watch the
+   elapsed-seconds column of the per-batch lines, or open ue_import_log.txt in the export
+   folder.  Never start a second run while the first one is still going.
+
 "Object lands twice as far as it should"
    Your FBX already carries the placement.  Use "Copy (FBX carries position)".
 
@@ -201,6 +233,13 @@ VERSIONS
          scripts contain no machine-specific absolute paths and write their logs next to
          themselves, the fallback-colour keyword list is English-only, and focus_cam.py
          frames the scene from placement.json instead of hard-coded coordinates.
+         UE side: the "copy ue_import_parts.py into <UE project>\Content\Python, restart,
+         run py \"ue_import_parts.py\"" workflow is the documented default; the script
+         locates the export folder through EXPORT_DIR / B2UE_EXPORT_DIR / a
+         b2ue_export_dir.txt pointer / <UE project>\Saved\B2UE\last_export_dir.txt /
+         a bounded scan of the UE project (no more recursive scan of the whole home
+         folder).  Every progress line carries elapsed seconds and the run starts with an
+         "importing is slow" note, so a 5-30 minute import is visibly alive.
 
 Pre-release history (private builds, same feature set as 1.0.0):
   3.0.0  English build of the 2.4.1 package: every string in the add-on, in the files it

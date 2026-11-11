@@ -4,62 +4,122 @@
 #   one at a time and saved right away) -> assign materials -> spawn actors
 #   (one actor per object, sharing the mesh asset).
 #   The level is saved automatically at the end of run().
-import unreal, json, os, traceback
+import unreal, json, os, time, traceback
 
 # ---------- Paths ----------
+# Where the Blender export lives (placement.json + parts/).
+#
+# YOU CAN COPY THIS FILE INTO <UEProject>/Content/Python/ AND RUN
+#     py "ue_import_parts.py"
+# The export folder is found in this order:
+#   1. EXPORT_DIR below, if you fill it in (absolute path)
+#   2. environment variable  B2UE_EXPORT_DIR
+#   3. one-line file  b2ue_export_dir.txt  next to this script
+#   4. the folder remembered from the previous run
+#      (<UEProject>/Saved/B2UE/last_export_dir.txt)
+#   5. next to / one level above this script (script left in <export_dir>/ue_side)
+#   6. newest placement.json found inside the UE project (bounded scan)
+# Once found, the folder is remembered in Saved/, so later runs need no setup.
+EXPORT_DIR = ""          # optional absolute path, e.g. r"I:\...\ue_parts"; "" = auto
+MARKER = "placement.json"
+
 _here = os.path.dirname(os.path.abspath(__file__))
 
-# Preferred layout: <export_dir>/ue_side/ue_import_parts.py
-# This makes the exporter destination authoritative and avoids machine-specific paths.
-_script_dir = os.path.abspath(_here)
-_parent_dir = os.path.dirname(_script_dir)
-_candidates = [
-    _parent_dir,  # script is inside the exported ue_side folder
-    _script_dir,  # allow running the script directly from export root
-]
-EXPORT_DIR = next(
-    (p for p in _candidates
-     if os.path.isfile(os.path.join(p, "placement.json"))
-     and os.path.isdir(os.path.join(p, "parts"))),
-    None,
-)
 
-# Fallback: search nearby folders (e.g. if the script was copied elsewhere).
-if EXPORT_DIR is None:
-    import glob as _glob
-    _roots = [
-        os.path.dirname(_script_dir),
-        os.path.dirname(_parent_dir),
-        os.path.expanduser("~"),
-    ]
-    _found = []
-    _seen = set()
-    for _root in _roots:
-        if not os.path.isdir(_root):
-            continue
-        # Keep search bounded to nearby folders; don't scan entire drives.
-        for _p in _glob.glob(os.path.join(_root, "**", "placement.json"), recursive=True):
-            _folder = os.path.dirname(_p)
-            if not os.path.isdir(os.path.join(_folder, "parts")):
+def _is_export_dir(p):
+    if not p:
+        return False
+    try:
+        return (os.path.isfile(os.path.join(p, MARKER))
+                and os.path.isdir(os.path.join(p, "parts")))
+    except Exception:
+        return False
+
+
+def _project_dir():
+    try:
+        return os.path.abspath(unreal.Paths.project_dir())
+    except Exception:
+        return ""
+
+
+def _read_pointer(path):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            first = f.readline().strip()
+        return first.strip('"').strip()
+    except Exception:
+        return ""
+
+
+def _cache_file():
+    proj = _project_dir()
+    if not proj:
+        return ""
+    return os.path.join(proj, "Saved", "B2UE", "last_export_dir.txt")
+
+
+def _write_cache(folder):
+    cf = _cache_file()
+    if not cf:
+        return
+    try:
+        os.makedirs(os.path.dirname(cf), exist_ok=True)
+        with open(cf, "w", encoding="utf-8") as f:
+            f.write(folder)
+    except Exception:
+        pass
+
+
+def _scan_project(proj):
+    """Newest placement.json inside the UE project; skips the heavy folders."""
+    skip = set(["Intermediate", "DerivedDataCache", "Binaries", "Saved", "Build",
+                ".git", "node_modules", "__pycache__"])
+    best = None
+    for root, dirs, files in os.walk(proj):
+        dirs[:] = [d for d in dirs if d not in skip]
+        if MARKER in files and os.path.isdir(os.path.join(root, "parts")):
+            try:
+                t = os.path.getmtime(os.path.join(root, MARKER))
+            except Exception:
                 continue
-            _key = os.path.normcase(os.path.abspath(_folder))
-            if _key not in _seen:
-                _seen.add(_key)
-                _found.append((os.path.getmtime(_p), _folder))
-    if _found:
-        _found.sort(reverse=True)
-        EXPORT_DIR = _found[0][1]
+            if best is None or t > best[0]:
+                best = (t, root)
+    return best[1] if best else None
+
+
+_candidates = []
+if EXPORT_DIR.strip():
+    _candidates.append(EXPORT_DIR.strip())
+_candidates.append(os.environ.get("B2UE_EXPORT_DIR", "").strip())
+_candidates.append(_read_pointer(os.path.join(_here, "b2ue_export_dir.txt")))
+_cf = _cache_file()
+if _cf:
+    _candidates.append(_read_pointer(_cf))
+_candidates.extend([os.path.dirname(_here), _here])
+
+EXPORT_DIR = next((os.path.abspath(p) for p in _candidates if _is_export_dir(p)), None)
+
+if EXPORT_DIR is None:
+    _proj = _project_dir()
+    if _proj:
+        EXPORT_DIR = _scan_project(_proj)
 
 if EXPORT_DIR is None:
     raise FileNotFoundError(
-        "Cannot locate export folder. Expected placement.json and parts/ beside "
-        "the ue_side folder. Run ue_import_parts.py from the exported <export_dir>/ue_side folder."
+        "Cannot locate the Blender export folder (needs placement.json + parts/).\n"
+        "Pick one of these (all are remembered after the first run):\n"
+        "  - set EXPORT_DIR at the top of this file to the absolute export path\n"
+        "  - set the environment variable B2UE_EXPORT_DIR\n"
+        "  - put the export path on one line into b2ue_export_dir.txt next to this script\n"
+        "  - leave this script inside <export_dir>/ue_side and run it from there"
     )
 
 EXPORT_DIR = os.path.abspath(EXPORT_DIR)
+_write_cache(EXPORT_DIR)
 PLACEMENT_FILE = os.path.join(EXPORT_DIR, "placement.json")
 PARTS_DIR = os.path.join(EXPORT_DIR, "parts")
-print("[UE Import] Auto-detected export directory:", EXPORT_DIR)
+print("[UE Import] Export directory:", EXPORT_DIR)
 
 # Unreal project asset destinations and import batching settings.
 # These constants were present in the original script but were accidentally
@@ -75,8 +135,13 @@ SMALL_MB, MID_MB = 10.0, 50.0
 LOG = os.path.join(EXPORT_DIR, "ue_import_log.txt")
 lines = []
 
+_T0 = time.time()
+
+
 def say(m):
-    lines.append(str(m))
+    stamp = "[%7.1fs] " % (time.time() - _T0)
+    m = stamp + str(m)
+    lines.append(m)
     try:
         with open(LOG, "w", encoding="utf-8") as _log_file:
             _log_file.write("\n".join(lines))
@@ -272,6 +337,9 @@ def run():
     entries = data.get("objects", [])
     parts = sorted(set(data.get("parts") or [e["part"] for e in entries]))
     say("START objects=%d parts=%d dir=%s" % (len(entries), len(parts), EXPORT_DIR))
+    say("NOTE: FBX import is SLOW - big meshes can take minutes each, a whole scene "
+        "easily 5-30 min. Do not close the editor and do not run the script twice; "
+        "this list updates after every batch, and the full log is " + LOG)
 
     meshes = import_all(parts)
 
