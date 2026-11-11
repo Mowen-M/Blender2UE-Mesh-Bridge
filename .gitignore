@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Blender / add-on leftovers
+*.blend1
+*.blend2
+ue_import_log.txt
+parts/
+ue_side/__pycache__/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local scratch
+*.log
